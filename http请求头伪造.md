@@ -56,7 +56,7 @@ Host: * 作用： 指定请求的域名。
 
 利用： Host 碰撞漏洞、SSRF（服务器端请求伪造）绕过、密码重置邮件投毒。
 
-Accept-Language:
+接受-Language:
 
 作用： 客户端期望的语言。
 
